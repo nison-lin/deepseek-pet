@@ -1,21 +1,27 @@
-"""设置窗口：集中放置快捷键、中转站和 DeepSeek API Key。
+"""设置窗口：集中放置开机自启动、快捷键、中转站以及 DeepSeek 的 API Key 和系统提示词。
 
 窗口本身不读写配置，也不直接操作各功能模块，数据和修改动作都由外部以回调传入。
-快捷键和中转站点击“修改”后立即生效；API Key 在关闭窗口时交给外部保存。
+开机自启动、快捷键和中转站修改后立即生效；API Key 和系统提示词在关闭窗口时交给外部保存。
 """
 from typing import Callable, Optional
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox, QGridLayout, QGroupBox, QHBoxLayout,
-                             QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget)
+                             QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QVBoxLayout,
+                             QWidget)
 
 
 class SettingsDialog(QDialog):
     def __init__(self, hotkeys: list[tuple[str, str]], hotkey_text: Callable[[str], str],
                  edit_hotkey: Callable[[str], None], relay_text: Callable[[], str],
-                 edit_relays: Callable[[], None], api_key: str, parent: Optional[QWidget] = None):
+                 edit_relays: Callable[[], None], api_key: str, system_prompt: str,
+                 default_system_prompt: str,
+                 autostart: Optional[tuple[bool, Callable[[bool], bool]]] = None,
+                 parent: Optional[QWidget] = None):
         """hotkeys：[(功能名, 显示名)]；hotkey_text(功能名) 返回当前快捷键的显示文字；
-        edit_hotkey / edit_relays 弹出对应的修改窗口；relay_text() 返回当前中转站的显示文字。"""
+        edit_hotkey / edit_relays 弹出对应的修改窗口；relay_text() 返回当前中转站的显示文字；
+        default_system_prompt 供“恢复默认”按钮使用；
+        autostart：(当前是否开启, 开关函数)，开关函数成功返回 True，切换后立即调用；None 表示不支持。"""
         super().__init__(parent, Qt.WindowStaysOnTopHint | Qt.WindowCloseButtonHint)
         self.setWindowTitle("设置")
         self.setMinimumWidth(420)
@@ -65,11 +71,41 @@ class SettingsDialog(QDialog):
         key_layout.addLayout(key_row)
         key_layout.addWidget(hint)
 
+        # 系统提示词
+        self.prompt_edit = QPlainTextEdit(system_prompt, self)
+        self.prompt_edit.setPlaceholderText("设定桌宠的人设和说话风格；留空则不发送系统提示词")
+        self.prompt_edit.setFixedHeight(self.prompt_edit.fontMetrics().lineSpacing() * 5 + 12)
+        reset_prompt = QPushButton("恢复默认", self)
+        reset_prompt.clicked.connect(lambda: self.prompt_edit.setPlainText(default_system_prompt))
+        prompt_header = QHBoxLayout()
+        prompt_header.addWidget(QLabel("系统提示词", self))
+        prompt_header.addStretch(1)
+        prompt_header.addWidget(reset_prompt)
+        prompt_hint = QLabel("修改后下一条消息即生效，已有的对话历史会保留。", self)
+        prompt_hint.setStyleSheet("color: gray;")
+        key_layout.addSpacing(6)
+        key_layout.addLayout(prompt_header)
+        key_layout.addWidget(self.prompt_edit)
+        key_layout.addWidget(prompt_hint)
+
         buttons = QDialogButtonBox(QDialogButtonBox.Close, self)
         buttons.button(QDialogButtonBox.Close).setText("关闭")
         buttons.rejected.connect(self.reject)
 
+        # 常规
+        general_box = QGroupBox("常规", self)
+        general_row = QHBoxLayout(general_box)
+        self.autostart_check = QCheckBox("开机时自动启动", self)
+        self.autostart_check.setChecked(autostart is not None and autostart[0])
+        self.autostart_check.setEnabled(autostart is not None)
+        if autostart is not None:
+            self.autostart_check.toggled.connect(lambda on: self._toggle_autostart(on, autostart[1]))
+        else:
+            self.autostart_check.setToolTip("当前系统不支持")
+        general_row.addWidget(self.autostart_check)
+
         layout = QVBoxLayout(self)
+        layout.addWidget(general_box)
         layout.addWidget(hotkey_box)
         layout.addWidget(relay_box)
         layout.addWidget(key_box)
@@ -80,6 +116,14 @@ class SettingsDialog(QDialog):
         action(*args)
         self._refresh()
 
+    def _toggle_autostart(self, enabled: bool, set_enabled: Callable[[bool], bool]):
+        if set_enabled(enabled):
+            return
+        self.autostart_check.blockSignals(True)
+        self.autostart_check.setChecked(not enabled)
+        self.autostart_check.blockSignals(False)
+        QMessageBox.warning(self, "开机自启动", f"{'开启' if enabled else '关闭'}开机自启动失败，详细信息见日志。")
+
     def _refresh(self):
         for name, label in self._hotkey_labels.items():
             label.setText(self._hotkey_text(name))
@@ -88,3 +132,7 @@ class SettingsDialog(QDialog):
     @property
     def api_key(self) -> str:
         return self.key_edit.text().strip()
+
+    @property
+    def system_prompt(self) -> str:
+        return self.prompt_edit.toPlainText().strip()

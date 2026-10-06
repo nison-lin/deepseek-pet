@@ -14,9 +14,10 @@ from PyQt5.QtCore import QLockFile, QPoint, QPointF, QSize, Qt
 from PyQt5.QtGui import QGuiApplication, QIcon
 from PyQt5.QtWidgets import QApplication, QMessageBox
 
+from . import autostart
 from .balance import BalanceMonitor, BalanceSign, Relay, RelayDialog, format_amount
 from .chat import ChatDialog, ChatSession, DeepSeekClient
-from .config import RESOURCE_DIR, ROOT_DIR, Config
+from .config import DEFAULT_CONFIG, RESOURCE_DIR, ROOT_DIR, Config
 from .hotkey import GlobalHotkeyManager, HotkeyEditDialog, parse_hotkey
 from .media import SoundPlayer, VideoPlayer
 from .pet import BehaviorController, PetMenu, PetWindow
@@ -268,15 +269,24 @@ class DesktopPetApp:
         return relays[current].name if relays else "（未配置）"
 
     def _open_settings(self):
+        chat_cfg = self.config.section("chat")
         dialog = SettingsDialog(
             [(name, spec["label"]) for name, spec in self._hotkey_specs.items()],
             self._hotkey_text, self._edit_hotkey, self._relay_text, self._edit_relays,
-            self.config.section("chat").get("api_key", ""),
+            chat_cfg.get("api_key", ""), chat_cfg.get("system_prompt", ""),
+            DEFAULT_CONFIG["chat"]["system_prompt"],
+            autostart=(autostart.is_enabled(), autostart.set_enabled) if autostart.supported else None,
         )
         dialog.exec_()
-        chat_cfg = self.config.section("chat")
+        changed = False
         if dialog.api_key != chat_cfg.get("api_key", ""):
             chat_cfg["api_key"] = dialog.api_key
+            changed = True
+        if dialog.system_prompt != chat_cfg.get("system_prompt", ""):
+            chat_cfg["system_prompt"] = dialog.system_prompt
+            self.chat_session.system_prompt = dialog.system_prompt  # 每次发送时读取，下一条消息即生效
+            changed = True
+        if changed:
             self.config.save()
 
     def toggle_pet(self):
@@ -356,6 +366,7 @@ def main() -> int:
     try:
         pet = DesktopPetApp(qt_app)
         pet.start()
+        autostart.refresh()
     except Exception:  # noqa: BLE001
         log.exception("启动失败")
         QMessageBox.critical(None, PET_NAME, f"启动失败，详细信息见日志：\n{LOG_DIR / 'pet.log'}")
