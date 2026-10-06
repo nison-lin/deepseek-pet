@@ -123,7 +123,7 @@ class ChatDialog(QDialog):
             return
         client = self.client_factory()
         if client is None:
-            self._append_notice("未配置 DeepSeek API Key，请在 config.json 中填写 chat.api_key "
+            self._append_notice("未配置 DeepSeek API Key，请在右键菜单“设置…”中填写，"
                                 "或设置环境变量 DEEPSEEK_API_KEY。")
             return
         self.input.clear()
