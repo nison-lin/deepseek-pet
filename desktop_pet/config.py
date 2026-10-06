@@ -19,6 +19,7 @@ DEFAULT_CONFIG = {
         "scale": 0.6,           # 相对于视频原始尺寸的缩放
         "position": None,       # [x, y]，None 表示放在屏幕右下角
         "always_on_top": True,
+        "hotkey": "Alt+Shift+H",  # 隐藏/显示桌宠的快捷键
     },
     "behavior": {
         "random_action_interval": [20, 60],  # 待机时随机动作的间隔（秒），设为 null 关闭

@@ -214,9 +214,9 @@ class HotkeyRecorder(QLineEdit):
 
 
 class HotkeyEditDialog(QDialog):
-    def __init__(self, current: str, parent=None):
+    def __init__(self, current: str, parent=None, title: str = "设置聊天快捷键"):
         super().__init__(parent, Qt.WindowStaysOnTopHint)
-        self.setWindowTitle("设置聊天快捷键")
+        self.setWindowTitle(title)
         self.recorder = HotkeyRecorder(current, self)
         self.warning = QLabel(self)
         self.warning.setWordWrap(True)
@@ -243,8 +243,8 @@ class HotkeyEditDialog(QDialog):
         self.warning.setVisible(bool(self.warning.text()))
 
     @classmethod
-    def ask(cls, current: str, parent=None) -> Optional[str]:
-        dialog = cls(current, parent)
+    def ask(cls, current: str, parent=None, title: str = "设置聊天快捷键") -> Optional[str]:
+        dialog = cls(current, parent, title)
         if dialog.exec_() != QDialog.Accepted:
             return None
         return dialog.recorder.hotkey or None

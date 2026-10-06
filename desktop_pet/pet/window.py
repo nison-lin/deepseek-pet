@@ -168,3 +168,10 @@ class PetWindow(QWidget):
     def contextMenuEvent(self, event):
         if self._is_opaque(event.pos()) or self._on_footer(event.pos()):
             self.menu_requested.emit(event.globalPos())
+
+    def hideEvent(self, event):
+        # 按住鼠标时被隐藏，丢弃这次按下，避免之后误触发拖拽
+        self._long_press_timer.stop()
+        self._press_global = None
+        self._dragging = False
+        super().hideEvent(event)

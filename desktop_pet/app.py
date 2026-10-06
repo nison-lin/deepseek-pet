@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import QApplication, QMessageBox
 from .balance import BalanceMonitor, BalanceSign, Relay, RelayDialog, format_amount
 from .chat import ChatDialog, ChatSession, DeepSeekClient
 from .config import Config
-from .hotkey import GlobalHotkeyManager, HotkeyEditDialog
+from .hotkey import GlobalHotkeyManager, HotkeyEditDialog, parse_hotkey
 from .media import SoundPlayer, VideoPlayer
 from .pet import BehaviorController, PetMenu, PetWindow
 from .pet.behavior import CAT_IDLE
@@ -68,7 +68,12 @@ class DesktopPetApp:
         self.chat_session = ChatSession(chat_cfg.get("system_prompt", ""), chat_cfg.get("max_history", 20))
         self.chat_dialog = ChatDialog(self._create_chat_client, self.chat_session, PET_NAME)
         self.hotkeys = GlobalHotkeyManager()
-        self._chat_hotkey_id: Optional[int] = None
+        # 全局快捷键：功能名 -> 配置所在小节、菜单显示名、回调；菜单项在 _build_menu 中补上
+        self._hotkey_specs = {
+            "chat": {"section": "chat", "label": "聊天快捷键", "callback": self.toggle_chat},
+            "pet": {"section": "window", "label": "隐藏/显示快捷键", "callback": self.toggle_pet},
+        }
+        self._hotkey_ids: dict[str, Optional[int]] = {}
 
         self._connect_signals()
         self._build_menu()
@@ -113,8 +118,10 @@ class DesktopPetApp:
     def _build_menu(self):
         """右键菜单，后续功能在此注册即可。"""
         self.menu.add_item("聊天", self.toggle_chat)
-        self._hotkey_action = self.menu.add_item("", self._edit_hotkey)
-        self._update_hotkey_label()
+        self.menu.add_item("隐藏桌宠", self.toggle_pet)
+        for name, spec in self._hotkey_specs.items():
+            spec["action"] = self.menu.add_item("", lambda n=name: self._edit_hotkey(n))
+            self._update_hotkey_label(name, self.config.section(spec["section"]).get("hotkey", ""))
         self.menu.addSeparator()
 
         self.menu.add_item("立即刷新余额", self.balance_monitor.refresh)
@@ -137,7 +144,8 @@ class DesktopPetApp:
         self.window.show()
         self._restore_position()
         self.behavior.start()
-        self._register_chat_hotkey(self.config.section("chat").get("hotkey", ""))
+        for name, spec in self._hotkey_specs.items():
+            self._register_hotkey(name, self.config.section(spec["section"]).get("hotkey", ""))
         self._apply_relay()
 
     def _shutdown(self):
@@ -190,29 +198,48 @@ class DesktopPetApp:
         self.behavior.play_sound("chat_start")
         self.behavior.perform("random", name="工作状态-思考冒泡")
 
-    def _register_chat_hotkey(self, hotkey: str) -> bool:
-        self.hotkeys.unregister(self._chat_hotkey_id)
-        self._chat_hotkey_id = self.hotkeys.register(hotkey, self.toggle_chat) if hotkey else None
-        self._update_hotkey_label()
-        return self._chat_hotkey_id is not None
+    def _register_hotkey(self, name: str, hotkey: str) -> bool:
+        spec = self._hotkey_specs[name]
+        self.hotkeys.unregister(self._hotkey_ids.get(name))
+        self._hotkey_ids[name] = self.hotkeys.register(hotkey, spec["callback"]) if hotkey else None
+        self._update_hotkey_label(name, hotkey)
+        return self._hotkey_ids[name] is not None
 
-    def _edit_hotkey(self):
-        chat_cfg = self.config.section("chat")
-        old = chat_cfg.get("hotkey", "")
-        new = HotkeyEditDialog.ask(old)
+    def _edit_hotkey(self, name: str):
+        spec = self._hotkey_specs[name]
+        cfg = self.config.section(spec["section"])
+        old = cfg.get("hotkey", "")
+        new = HotkeyEditDialog.ask(old, title=f"设置{spec['label']}")
         if not new or new == old:
             return
-        if self._register_chat_hotkey(new):
-            chat_cfg["hotkey"] = new
+        parsed = parse_hotkey(new)
+        for other, other_spec in self._hotkey_specs.items():
+            other_key = self.config.section(other_spec["section"]).get("hotkey", "")
+            if other != name and other_key and parse_hotkey(other_key) == parsed:
+                QMessageBox.warning(None, "快捷键", f"{new} 已被“{other_spec['label']}”使用，请换一个。")
+                return
+        if self._register_hotkey(name, new):
+            cfg["hotkey"] = new
             self.config.save()
         else:
             QMessageBox.warning(None, "快捷键", f"快捷键 {new} 无法注册（格式不支持或已被占用），已恢复为 {old}。")
-            self._register_chat_hotkey(old)
+            self._register_hotkey(name, old)
 
-    def _update_hotkey_label(self):
-        hotkey = self.config.section("chat").get("hotkey", "")
-        state = hotkey if self._chat_hotkey_id is not None else f"{hotkey}（未生效）"
-        self._hotkey_action.setText(f"聊天快捷键：{state}")
+    def _update_hotkey_label(self, name: str, hotkey: str):
+        spec = self._hotkey_specs[name]
+        state = hotkey if self._hotkey_ids.get(name) is not None else f"{hotkey}（未生效）"
+        spec["action"].setText(f"{spec['label']}：{state}")
+
+    def toggle_pet(self):
+        """隐藏 / 显示桌宠，隐藏期间暂停动画以节省资源。"""
+        if self.window.isVisible():
+            self.menu.hide()
+            self.behavior.pause()
+            self.window.hide()
+        else:
+            self.window.show()
+            self.window.raise_()
+            self.behavior.start()
 
     def set_scale(self, scale: float):
         center = self.window.frameGeometry().center()

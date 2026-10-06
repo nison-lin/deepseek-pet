@@ -56,6 +56,12 @@ class BehaviorController(QObject):
     def start(self):
         self._enter_idle()
 
+    def pause(self):
+        """停止动画和随机动作（如桌宠被隐藏时），调用 start() 恢复。"""
+        self._random_timer.stop()
+        self.state = PetState.IDLE
+        self.player.stop()
+
     def on_clicked(self, _pos: QPoint = QPoint()):
         if self.state != PetState.DRAG:
             self._play_once(CAT_CLICK, PetState.CLICK, sound_key="click")
