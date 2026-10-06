@@ -7,15 +7,16 @@
 import logging
 import random
 import sys
+from logging.handlers import RotatingFileHandler
 from typing import Optional
 
-from PyQt5.QtCore import QPoint, QPointF, QSize, Qt
+from PyQt5.QtCore import QLockFile, QPoint, QPointF, QSize, Qt
 from PyQt5.QtGui import QGuiApplication, QIcon
 from PyQt5.QtWidgets import QApplication, QMessageBox
 
 from .balance import BalanceMonitor, BalanceSign, Relay, RelayDialog, format_amount
 from .chat import ChatDialog, ChatSession, DeepSeekClient
-from .config import Config
+from .config import RESOURCE_DIR, ROOT_DIR, Config
 from .hotkey import GlobalHotkeyManager, HotkeyEditDialog, parse_hotkey
 from .media import SoundPlayer, VideoPlayer
 from .pet import BehaviorController, PetMenu, PetWindow
@@ -25,6 +26,8 @@ from .resources import ResourceLibrary
 log = logging.getLogger(__name__)
 
 PET_NAME = "大肥鱼"
+LOG_DIR = ROOT_DIR / "logs"
+LOCK_PATH = ROOT_DIR / "pet.lock"
 SCALE_OPTIONS = [0.4, 0.5, 0.6, 0.8, 1.0]
 
 # 各余额档位对应的候选动画（resource/videos/events/balance），序号见 balance_tier
@@ -302,12 +305,45 @@ class DesktopPetApp:
         self.config.save()
 
 
+def _setup_logging():
+    """日志写入 logs/pet.log；用 pythonw 无控制台启动时也能事后排查问题。"""
+    LOG_DIR.mkdir(exist_ok=True)
+    handlers: list[logging.Handler] = [
+        RotatingFileHandler(LOG_DIR / "pet.log", maxBytes=1_000_000, backupCount=2, encoding="utf-8")]
+    if sys.stderr is not None:  # pythonw 下没有 stderr
+        handlers.append(logging.StreamHandler())
+    logging.basicConfig(level=logging.INFO, handlers=handlers,
+                        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    # 未捕获的异常只记录日志，避免 PyQt 直接终止程序
+    sys.excepthook = lambda *exc: log.critical("未捕获的异常", exc_info=exc)
+
+
 def main() -> int:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    _setup_logging()
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)
     qt_app = QApplication(sys.argv)
     qt_app.setQuitOnLastWindowClosed(False)  # 关闭聊天窗口等不应退出程序
-    pet = DesktopPetApp(qt_app)
-    pet.start()
+
+    # 资源不打包进 exe，需与程序放在同一目录
+    if not (RESOURCE_DIR / "videos").is_dir():
+        log.error("找不到资源目录: %s", RESOURCE_DIR)
+        QMessageBox.critical(None, PET_NAME, f"找不到资源文件夹：\n{RESOURCE_DIR}\n\n"
+                                             "请把 resource 文件夹和程序放在同一目录下。")
+        return 1
+
+    # 单实例：重复启动时提示并退出
+    lock = QLockFile(str(LOCK_PATH))
+    lock.setStaleLockTime(0)  # 只以进程是否存活判断，不按时间过期
+    if not lock.tryLock(100):
+        QMessageBox.information(None, PET_NAME, f"{PET_NAME}已经在桌面上啦。")
+        return 0
+
+    try:
+        pet = DesktopPetApp(qt_app)
+        pet.start()
+    except Exception:  # noqa: BLE001
+        log.exception("启动失败")
+        QMessageBox.critical(None, PET_NAME, f"启动失败，详细信息见日志：\n{LOG_DIR / 'pet.log'}")
+        return 1
     return qt_app.exec_()

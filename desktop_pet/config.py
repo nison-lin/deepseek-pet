@@ -1,16 +1,21 @@
 """配置加载与保存。
 
-用户配置保存在项目根目录的 config.json 中，缺失的字段使用 DEFAULT_CONFIG 补齐。
+用户配置保存在程序目录的 config.json 中，缺失的字段使用 DEFAULT_CONFIG 补齐。
 """
 import copy
 import json
 import logging
 import os
+import sys
 from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
+# 打包成 exe 后以 exe 所在目录为根目录：resource、config.json、logs 都放在 exe 旁边
+if getattr(sys, "frozen", False):
+    ROOT_DIR = Path(sys.executable).resolve().parent
+else:
+    ROOT_DIR = Path(__file__).resolve().parent.parent
 RESOURCE_DIR = ROOT_DIR / "resource"
 CONFIG_PATH = ROOT_DIR / "config.json"
 

@@ -1,6 +1,11 @@
 __pycache__/
 *.pyc
 config.json
+logs/
+pet.lock
+build/
+dist/
+.venv/
 
 # claude
 .claude/
