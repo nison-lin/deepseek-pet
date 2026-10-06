@@ -12,7 +12,7 @@ log = logging.getLogger(__name__)
 
 class BalanceMonitor(QObject):
     refreshing = pyqtSignal(object)        # Relay
-    updated = pyqtSignal(object)           # BalanceResult
+    updated = pyqtSignal(object, bool)     # BalanceResult, 是否为手动查询
     failed = pyqtSignal(object, object)    # Relay, BalanceError
 
     _done = pyqtSignal(int, object, object)  # 代号, 结果, 错误
@@ -22,9 +22,10 @@ class BalanceMonitor(QObject):
         self.relay: Optional[Relay] = None
         self._generation = 0
         self._busy = False
+        self._manual = False
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
-        self._timer.timeout.connect(self.refresh)
+        self._timer.timeout.connect(lambda: self.refresh())
         self.set_interval(interval_sec)
         self._done.connect(self._on_done)
 
@@ -37,12 +38,14 @@ class BalanceMonitor(QObject):
         self._busy = False  # 切换后旧请求的结果会被丢弃
         self.refresh()
 
-    def refresh(self):
+    def refresh(self, manual: bool = False):
+        """manual：用户主动发起的查询（定时刷新与切换中转站时为 False）。"""
         if self.relay is None or self._busy:
             return
         self._timer.stop()
         self._generation += 1
         self._busy = True
+        self._manual = manual
         relay = Relay(**self.relay.to_dict())  # 拷贝一份，避免线程中读取到被修改的配置
         threading.Thread(target=self._run, args=(self._generation, relay),
                          name="balance-fetch", daemon=True).start()
@@ -66,7 +69,7 @@ class BalanceMonitor(QObject):
             return
         self._busy = False
         if error is None:
-            self.updated.emit(result)
+            self.updated.emit(result, self._manual)
         else:
             log.warning("查询余额失败（%s）: %s", result.name, error)
             self.failed.emit(result, error)

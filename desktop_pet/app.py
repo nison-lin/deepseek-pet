@@ -5,6 +5,7 @@
 2. 在这里创建实例、连接信号、在 _build_menu 中注册菜单项。
 """
 import logging
+import random
 import sys
 from typing import Optional
 
@@ -25,6 +26,25 @@ log = logging.getLogger(__name__)
 
 PET_NAME = "大肥鱼"
 SCALE_OPTIONS = [0.4, 0.5, 0.6, 0.8, 1.0]
+
+# 各余额档位对应的候选动画（resource/videos/events/balance），序号见 balance_tier
+CAT_BALANCE = "events/balance"
+BALANCE_CLIPS = [
+    ["余额-袋空如洗", "余额-分文不剩"],  # 余额 <= 0
+    ["余额-数金皱眉"],                  # 0 < 余额 < 10
+    ["余额-钱袋如常"],                  # 10 <= 余额 < 20
+    ["余额-金袋叮当", "余额-钱袋满溢"],  # 余额 >= 20
+]
+
+
+def balance_tier(amount: float) -> int:
+    if amount <= 0:
+        return 0
+    if amount < 10:
+        return 1
+    if amount < 20:
+        return 2
+    return 3
 
 
 class DesktopPetApp:
@@ -62,6 +82,7 @@ class DesktopPetApp:
         self.balance_sign = BalanceSign()
         self.window.set_footer(self.balance_sign, overlap=0.06)  # 鞋底刚好压在木板上沿
         self.balance_monitor = BalanceMonitor(balance_cfg.get("refresh_interval", 300))
+        self._balance_tier: Optional[int] = None  # 上一次查询结果所在档位
 
         # 聊天
         chat_cfg = self.config.section("chat")
@@ -110,7 +131,8 @@ class DesktopPetApp:
         self.chat_dialog.request_failed.connect(lambda _: self.behavior.play_sound("chat_error"))
 
         self.balance_monitor.refreshing.connect(lambda _: self.balance_sign.show_loading())
-        self.balance_monitor.updated.connect(lambda r: self.balance_sign.show_amount(format_amount(r.amount)))
+        self.balance_monitor.updated.connect(lambda r, _: self.balance_sign.show_amount(format_amount(r.amount)))
+        self.balance_monitor.updated.connect(self._react_to_balance)
         self.balance_monitor.failed.connect(lambda _, e: self.balance_sign.show_error(e.short))
 
         self.qt_app.aboutToQuit.connect(self._shutdown)
@@ -124,7 +146,7 @@ class DesktopPetApp:
             self._update_hotkey_label(name, self.config.section(spec["section"]).get("hotkey", ""))
         self.menu.addSeparator()
 
-        self.menu.add_item("立即刷新余额", self.balance_monitor.refresh)
+        self.menu.add_item("立即刷新余额", lambda: self.balance_monitor.refresh(manual=True))
         self.menu.add_item("更换中转站", self._edit_relays)
         self.menu.addSeparator()
 
@@ -168,7 +190,17 @@ class DesktopPetApp:
             self.balance_sign.show_error("未配置中转站")
             return
         self.balance_sign.set_title(relays[current].name)
+        self._balance_tier = None  # 换了中转站，下一次自动查询视为第一次
         self.balance_monitor.set_relay(relays[current])
+
+    def _react_to_balance(self, result, manual: bool):
+        """按余额档位播放动画：手动查询每次都播；自动查询只在第一次和档位变化时播。"""
+        tier = balance_tier(result.amount)
+        changed = tier != self._balance_tier
+        self._balance_tier = tier
+        if not (manual or changed) or not self.window.isVisible():
+            return
+        self.behavior.perform(CAT_BALANCE, name=random.choice(BALANCE_CLIPS[tier]))
 
     def _edit_relays(self):
         relays, current = self._relays()
