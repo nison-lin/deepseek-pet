@@ -2,9 +2,9 @@
 
 > 你说得对，但谁不想在桌面上养一只大肥鱼呢......
 
-## 说在前面
+## 写在前面
 
-本项目动画与音效素材来源于[这个更完善的大肥鱼桌宠](https://github.com/MerZlin/dsh-pet-indesktop)
+本项目动画与音效素材来源于 [dsh-pet-indesktop](https://github.com/MerZlin/dsh-pet-indesktop)
 
 本项目纯属个人写着玩的，非盈利喵，补药给我寄律师函喵
 
@@ -14,16 +14,10 @@
 2. 展示你的api key余额，并根据余额播放对应动画
 3. 与大肥鱼对话（使用deepseek官方api）
 
-## 运行
+## 下载方式
 
-双击 `ds-pet.exe` 即可。
+进入 [Release](https://github.com/nison-lin/deepseek-pet/releases/latest) 页面，下载最新版本的 `ds-pet-portable.zip` 并解压即可
 
-```
-ds-pet/
-├── ds-pet.exe
-└── resource/
-```
-
-## 其他
+## 写在最后
 
 我不允许有人的电脑上没有一个大肥鱼桌宠！
